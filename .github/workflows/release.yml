@@ -1,0 +1,77 @@
+# 이 파일은 *공개* 릴리스 레포(logyson2/paper-manager-releases)의
+#   .github/workflows/release.yml
+# 로 복사해 넣으세요. (이 위치는 보관용 사본입니다.)
+#
+# 동작: 비공개 소스(logyson2/moonpage)를 PAT 로 체크아웃해 앱을 빌드·서명하고,
+#       *이* 공개 레포의 Release 로 발행한다. latest.json 의 다운로드 URL 이
+#       공개 레포를 가리키므로, 설치된 앱이 인증 없이 자동 업데이트한다.
+#
+# 트리거: Actions 탭 → "Run workflow" (수동). 입력 2개.
+#
+# 필요한 Secrets (이 공개 레포 Settings → Secrets and variables → Actions):
+#   - SOURCE_REPO_TOKEN                  : logyson2/moonpage 읽기 PAT (contents:read)
+#   - TAURI_SIGNING_PRIVATE_KEY          : 서명 개인키 파일(~/paper-manager.key) 내용 전체
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD : 그 비밀번호(없으면 빈 값)
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "비공개 소스에서 빌드할 ref (태그/브랜치, 예: main)"
+        required: true
+        default: "main"
+      version:
+        description: "이 공개 레포에 만들 릴리스 태그 (예: v0.0.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: logyson2/moonpage
+          ref: ${{ github.event.inputs.source_ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          path: source
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: source/widgets/paper-manager/src-tauri
+
+      - name: Install JS deps
+        working-directory: source/widgets/paper-manager
+        run: npm install
+
+      - name: Generate icons
+        working-directory: source/widgets/paper-manager
+        run: npm run tauri icon src-tauri/icons/source.png
+
+      - name: Build + sign + release (이 공개 레포에 발행)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: source/widgets/paper-manager
+          tagName: ${{ github.event.inputs.version }}
+          releaseName: "논문 라이브러리 ${{ github.event.inputs.version }}"
+          releaseBody: "자동 빌드된 릴리스입니다. 설치된 앱은 다음 실행 시 자동 업데이트됩니다."
+          releaseDraft: false
+          prerelease: false
