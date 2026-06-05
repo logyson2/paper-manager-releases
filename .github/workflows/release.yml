@@ -70,13 +70,19 @@ jobs:
         working-directory: source/widgets/paper-manager
         shell: pwsh
         run: |
-          $v = "${{ github.event.inputs.version }}".TrimStart('v')
+          # 태그에서 앞의 'v' 제거 후 semver(X.Y.Z)로 정규화. tauri 는 3자리만 허용.
+          #   v1.1 → 1.1.0,  v2 → 2.0.0,  v1.2.3 → 1.2.3
+          $v = "${{ github.event.inputs.version }}".TrimStart('v').Trim()
+          $parts = @($v -split '\.')
+          while ($parts.Count -lt 3) { $parts += '0' }
+          $v = ($parts[0..2] -join '.')
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { Write-Error "버전 형식 오류: '$v' — 숫자 semver(X.Y.Z)만 허용"; exit 1 }
           $conf = "src-tauri/tauri.conf.json"
           $repl = '${1}' + $v + '${2}'
           (Get-Content $conf -Raw) -replace '("version"\s*:\s*")[^"]+(")', $repl | Set-Content $conf -NoNewline
           $check = (Get-Content $conf -Raw | ConvertFrom-Json).version
           if ($check -ne $v) { Write-Error "버전 동기화 실패: $check (기대값 $v)"; exit 1 }
-          Write-Host "앱 버전 = $check"
+          Write-Host "앱 버전 = $check (태그 ${{ github.event.inputs.version }})"
 
       - name: Build + sign + release (이 공개 레포에 발행)
         uses: tauri-apps/tauri-action@v0
