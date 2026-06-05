@@ -62,6 +62,22 @@ jobs:
         working-directory: source/widgets/paper-manager
         run: npm run tauri icon src-tauri/icons/source.png
 
+      # 앱 버전을 릴리스 태그(v0.1.5 → 0.1.5)로 맞춘다.
+      # tauri.conf.json 의 version 이 latest.json 의 version 으로 들어가고,
+      # 업데이터는 이 값으로 신/구를 비교한다. 태그만 올리고 이 값을 안 올리면
+      # 빌드는 되지만 "이미 최신"으로 판단해 영영 업데이트가 안 된다.
+      - name: Sync app version to release tag
+        working-directory: source/widgets/paper-manager
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}".TrimStart('v')
+          $conf = "src-tauri/tauri.conf.json"
+          $repl = '${1}' + $v + '${2}'
+          (Get-Content $conf -Raw) -replace '("version"\s*:\s*")[^"]+(")', $repl | Set-Content $conf -NoNewline
+          $check = (Get-Content $conf -Raw | ConvertFrom-Json).version
+          if ($check -ne $v) { Write-Error "버전 동기화 실패: $check (기대값 $v)"; exit 1 }
+          Write-Host "앱 버전 = $check"
+
       - name: Build + sign + release (이 공개 레포에 발행)
         uses: tauri-apps/tauri-action@v0
         env:
